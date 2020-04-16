@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>Taskliste</title>
+    <script src="https://unpkg.com/react@16/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@16/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
+    <script src="model.js"></script>
+
+    <link rel="stylesheet" href="material.css" />
+
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="http://fonts.googleapis.com/css?family=Roboto:300,400,500,700" type="text/css">
+</head>
+<body>
+    <div id="fromExcel"></div>
+    <script type="text/babel">
+        const model = getDemoModel()
+        const tableStyleCalsses = "mdl-data-table mdl-js-data-table mdl-data-table--selectable mdl-shadow--2dp"
+        const tableStyles = {
+            borderCollapse: 'separate',
+            borderSpacing: '1px',
+        }
+        const validateClasses = "mdl-button--raised"
+        const cellStyle = {
+            maxWidth:"60px",
+        }
+        const cellErrStyle = {
+            border:'1px solid red',
+            borderSpacing: '2px'
+        }
+        const inputStyle = {
+            width:'100%'
+        }
+        const confirmMsg = "Are you sure to replace the content?"
+
+        const createError = function(rowId, cellId, colTitle, msg){
+            return {
+                rowNo: rowId,
+                cellNo: cellId,
+                colTitle: colTitle,
+                cellKey: (rowId +'_'+ cellId),
+                msg:msg
+            } 
+        }
+
+        class DataColumn extends React.Component {
+            constructor(props) {
+                super(props)
+                this.editCell = this.editCell.bind(this)
+                this.changeCell = this.changeCell.bind(this)
+                this.submitCell = this.submitCell.bind(this)
+                this.setCellState = this.setCellState.bind(this)
+                this.validateCell = this.validateCell.bind(this)
+
+                this.state = {
+                    isSelected: false,
+                    value: this.props.value,
+                    error:null
+                }               
+            }
+
+            componentDidMount(){
+                this.validateCell()
+            }
+            validateCell(){
+                if(this.props.cellId == 0){
+                    return
+                }
+
+                let error = null
+                const colTitle = this.props.modelDef.title ? this.props.modelDef.title : this.props.modelDef.key
+                const customMsg = this.props.modelDef.validation.msg !== 'undefined' ? this.props.modelDef.validation.msg : null
+                try{
+
+                    if(this.props.modelDef.validation.required && this.state.value== ''){
+                        const msg = "Is required."
+                        error = createError(this.props.rowId, this.props.cellId, colTitle, customMsg ? customMsg : msg)
+                    }
+                    else if(this.props.modelDef.validation.regex){
+                        const msg = `Value does not match ${this.props.modelDef.validation.regex}`
+                        if(!this.state.value.match(this.props.modelDef.validation.regex)){
+                            error = createError(this.props.rowId, this.props.cellId, colTitle, customMsg ? customMsg : msg )
+                        }
+                    }
+                    else if(!isNaN(this.props.modelDef.validation.maxLength) && this.state.value!= '' && this.state.value.length > this.props.modelDef.validation.maxLength){
+                        const msg = `exceeded max. length of ${this.props.modelDef.validation.maxLength}`
+                        error = createError(this.props.rowId, this.props.cellId, colTitle, customMsg ? customMsg : msg )
+                    }
+                    else if(!isNaN(this.props.modelDef.validation.minLength) && this.state.value!= '' && this.state.value.length < this.props.modelDef.validation.minLength){
+                        const msg = `deceeded min. length of ${this.props.modelDef.validation.minLength}`
+                        error = createError(this.props.rowId, this.props.cellId, colTitle, customMsg ? customMsg : msg )
+                    }
+                    else if(!isNaN(this.props.modelDef.validation.maxValue) && this.state.value!= '' && (isNaN(this.state.value) || this.state.value> this.props.modelDef.validation.maxValue)){
+                        const msg = `exceeded max. value of ${this.props.modelDef.validation.maxValue}`
+                        error = createError(this.props.rowId, this.props.cellId, colTitle, customMsg ? customMsg : msg )
+                    }
+                    else if(!isNaN(this.props.modelDef.validation.minValue) && this.state.value!= '' && (isNaN(this.state.value) || this.state.value< this.props.modelDef.validation.minValue)){
+                        const msg = `deceeded min. value of ${this.props.modelDef.validation.minValue}`
+                        error = createError(this.props.rowId, this.props.cellId, colTitle, customMsg ? customMsg : msg )
+                    }
+                    else if(this.props.modelDef.validation.values && this.state.value != '' && this.props.modelDef.validation.values.length > 0){
+                        const foundValue = this.props.modelDef.validation.values.find(elem => elem.toString() == this.state.value.toString())
+                        if(!foundValue){
+                            const msg = `value ${this.state.value} is not in list of ${this.props.modelDef.validation.values}`
+                            error = createError(this.props.rowId, this.props.cellId, colTitle, msg)
+                        }
+                    }
+                    this.setState({error:error})
+                }catch(e){
+                    console.error("error for " + colTitle)
+                }
+            }
+            editCell(){
+                this.setState({isSelected: true})
+            }
+            changeCell(e){
+                //https://stackoverflow.com/questions/54469273/react-material-ui-onfocusout
+                let error = this.validateCell()
+                //this.setState({value: e.target.value, error: this.validateCell()})
+                this.setState({value: e.target.value})
+            }
+            submitCell(e){
+                this.props.updateContent(this.props.rowId, this.props.cellId, this.state.value)
+                this.setState({isSelected:  false})
+            }
+            setCellState(e){
+                //https://css-tricks.com/snippets/javascript/javascript-keycodes/
+                if(e.keyCode === 13){
+                    this.submitCell(e)
+                }else if(e.keyCode == 27){
+                    this.setState({isSelected:  false})
+                }
+            }
+
+            render(){
+                if(this.props.cellId == 0){
+                    return (<td>{this.props.value + 1}</td>)
+                }        
+                if(!this.state.isSelected){
+                    return (
+                        <td 
+                            onClick={this.editCell}
+                            style={this.state.error? cellErrStyle : null}
+                            title={this.state.error? this.state.error.msg : null}
+                         >
+                            {this.props.value.length > 30 ? this.props.value.substr(0,27) + '...': this.props.value}
+                        </td>
+                    )
+                }else{
+
+                    if(this.props.modelDef.validation.values && this.props.modelDef.validation.values.length > 0){
+                        return (
+                            <td>
+                                <select
+                                    autoFocus={true}
+                                    style={inputStyle}
+                                    value={this.state.value} 
+                                    onChange={this.changeCell} 
+                                    onBlur={this.submitCell}
+                                    onKeyDown={this.setCellState}                            
+                                >
+                                {
+                                    this.props.modelDef.validation.values.map((value)=>
+                                        (
+                                            <option key={value} value={value}>{value}</option>
+                                        )
+                                    )
+                                }
+                                </select>
+                            </td>
+                        )
+                    }else{
+                        return (
+                            <td style={cellStyle}>
+                                <input 
+                                    type='text'
+                                    autoFocus={true}
+                                    style={inputStyle}
+                                    value={this.state.value} 
+                                    onChange={this.changeCell} 
+                                    onBlur={this.submitCell}
+                                    onKeyDown={this.setCellState}
+                                />
+                            </td>
+                        )
+                    }
+                }
+                
+            }
+        }
+
+        class DataRow extends React.Component {
+            constructor(props) {
+                super(props)
+            }
+            render() {
+                return (
+                    <tr>
+                        {
+                            this.props.row.map((column, index, arr) =>
+                                (
+                                    <DataColumn 
+                                        key={this.props.row[0] + '_' + index}
+                                        rowId={this.props.row[0]}
+                                        cellId={index}
+                                        modelDef={index != 0 ? this.props.model[index-1] :  null}
+                                        updateContent={this.props.updateContent}
+                                        value={column} />
+                                )
+                            )
+                        }
+                    </tr>
+                )
+            }
+        }
+
+        class DataTable extends React.Component {
+            constructor(props) {
+                super(props)
+                this.pasteFromExcel = this.pasteFromExcel.bind(this)
+                this.updateContent = this.updateContent.bind(this)
+                this.columnCount = props.model.length
+                this.state = {
+                    content:[]
+                }
+            }
+
+            printErrors(){
+                let errorMessage = []                
+            }
+
+            updateContent(rowId, cellId, value){
+                let tmpContend = this.state.content
+                tmpContend[rowId][cellId] = value
+                let tmpErrors = this.state.errors
+
+                this.setState({content:tmpContend, errors:tmpErrors})
+            }
+
+            pasteFromExcel(){
+                if (this.state.content.length == 0 || window.confirm(confirmMsg)){
+                    let paste = (event.clipboardData || window.clipboardData).getData('text')
+                    let lines = paste.split('\n');
+                    let addedContent = []
+                    for(let line = 0; line < lines.length; line++){
+                        let columns = lines[line].split('\t').map(elem => elem.replace(/(\r\n|\n|\r)/gm,''));                    
+                        let anyElement = columns.find(elem => elem != '' && elem.length > 0)
+                        if(columns.length > 0 && anyElement !== undefined){
+                            addedContent[line] = [line]
+                            for(let colPos = 0; colPos < this.columnCount; colPos++){
+                                if(colPos < columns.length){
+                                    addedContent[line].push(columns[colPos])
+                                }else{
+                                    addedContent[line].push('')
+                                }
+                            }                    
+                        }
+                    }
+                    this.setState({content: addedContent})
+                }
+            }
+
+            render() {
+                return (
+                    <div>
+                        <table className={tableStyleCalsses} style={tableStyles} onPaste={this.pasteFromExcel}>
+                            <thead>
+                                <tr>
+                                    <th></th>
+                                    {this.props.model.map((colModel) =>
+                                        (<th key={colModel.key}>{colModel.title}</th>)
+                                    )}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {
+                                    this.state.content.map((row) =>
+                                        (
+                                            <DataRow 
+                                                row={row} 
+                                                key={"row_" + row[0]} 
+                                                errors={this.state.errors} 
+                                                updateContent={this.updateContent}
+                                                model={this.props.model}
+                                            />
+                                        )
+                                    )
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                )
+            }
+        }
+
+        ReactDOM.render(
+          <DataTable model={model}/>,
+          document.getElementById('fromExcel')
+        );
+
+    </script>
+
+</body>
+</html>
